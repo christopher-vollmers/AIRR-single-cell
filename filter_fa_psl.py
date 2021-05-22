@@ -114,7 +114,7 @@ def readFastq(seq_file):
             if line[0] == '@':
                 if lastPlus:
 
-                    readDict[name]=(name,seq,qual)
+                    readDict[name.split('_')[0]]=(name,seq,qual)
                 name = line[1:]
 
         if lineNum % 4 == 1:
@@ -137,8 +137,8 @@ def main():
     for file in fileList:
         headers = readIso(sub_path2+'/'+file)
 
-        fastaDict=readFasta(sub_path1+'/'+file.split('-')[0]+'.merged.fasta')
-        fastqDict=readFastq(sub_path1+'/'+file.split('-')[0]+'.merged.subreads.fastq')
+        fastaDict=readFasta(sub_path1+'/'+file.split('-')[0]+'.fasta')
+        fastqDict=readFastq(sub_path1+'/'+file.split('-')[0]+'_subs.fastq')
         outFastq = open(sub_path2+'/'+file + '.subreads.fastq', 'w+')
         outFasta = open(sub_path2+'/'+file + '.fasta', 'w+')
         for header in headers:

@@ -71,9 +71,9 @@ def read_fasta(inFile):
         readList.append((headers[i],sequences[i]))
     return readList
 
-Isotypes=read_fasta('/home/ig88/Downloads/spliced_constant_regions_edited.fasta')
+Isotypes=read_fasta('spliced_constant_regions_edited.fasta')
 
-Isoforms=read_fasta('/home/ig88/Downloads/membrane_secreted_only_human_C')
+Isoforms=read_fasta('membrane_secreted_only_human_C')
 
 IsoDict={}
 for isoform,sequence in Isoforms:
@@ -109,6 +109,19 @@ for line in handle:
         v_support=float(la[54])
         print(V_seg, v_support)
 
+        try:
+            C_seq=seq[int(la[69])-1:-20]
+        except:
+            C_seq=''
+        match,distance=find_constant_region(C_seq,Isotypes)
+        if isoform_test=='yes':
+
+            isoform,S,M=determine_isoform(C_seq,match,IsoDict)
+            print(match,distance,isoform,S,M)
+        else:
+            isoform='N/A'
+
+
         for s,g in zip(sequence_V,germline_V):
             if s != '-' and g != '-' and s != g:
                 germline_mismatch_pos.append(str(g_index))
@@ -117,6 +130,6 @@ for line in handle:
             if g != '-':
                 g_index+=1
 #        out.write("\t".join([re.sub("reversed\|","",ID),seq_type,V_seg,D_seg,J_seg,CDR3,"N/A",isoform,match,seq,",".join(germline_mismatch_pos),'\n']))
-        string='%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' % (ID.replace('reversed|',''),seq_type,V_seg,D_seg,J_seg,CDR3,Amb,'-','-',seq,",".join(germline_mismatch_pos))
+        string='%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' % (ID.replace('reversed|',''),seq_type,V_seg,D_seg,J_seg,CDR3,Amb,isoform,match,seq,",".join(germline_mismatch_pos))
         if v_support<1e-25:
             out.write(string)

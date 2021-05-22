@@ -18,28 +18,14 @@ python3 filter_fasta.py . ../misc/41_post_flc.fasta
 
 import sys
 import os
+import mappy
 from progress.bar import Bar
 
 def readFasta(inFile):
     '''Reads in FASTA files, returns a dict of header:sequence'''
     readDict = {}
-    for line in open(inFile):
-        line = line.rstrip()
-        if not line:
-            continue
-        if line.startswith('>'):
-            if readDict:
-                readDict[lastHead] = ''.join(readDict[lastHead])
-
-
-
-            head = line[1:]
-            readDict[head] = []
-            lastHead = head
-        else:
-            readDict[lastHead].append(line.upper())
-    if readDict:
-        readDict[lastHead] = ''.join(readDict[lastHead])
+    for name,seq,qual in mappy.fastx_read(inFile):
+        readDict[name]=seq
     return readDict
 
 def readSAM(inFile):
@@ -51,34 +37,14 @@ def readSAM(inFile):
         headers.append(header)
     return headers
 
-def readFastq(seq_file):
-    lineNum=0
-    lastPlus = False
+def readFastq(seqFile):
     readDict={}
-    out=open(seq_file+'.fixed','w')
-    for line in open(seq_file):
-        line = line.rstrip()
-#        if not line:
-#            continue
-        # make an entry as a list and append the header to that list
-        if lineNum % 4 == 0:
-            if line[0] == '@':
-                if lastPlus:
-
-                    readDict[name]=(name,seq,qual)
-                name = line[1:]
-
-        if lineNum % 4 == 1:
-            seq=line
-        if lineNum % 4 == 2:
-            lastPlus=True
-        if lineNum % 4 == 3:
-            qual=line
-        lineNum += 1
-
+    for name,seq,qual in mappy.fastx_read(seqFile):
+        root_name=name.split('_')[0]
+        if root_name not in readDict:
+            readDict[root_name]=[]
+        readDict[root_name].append((name,seq,qual))
     return readDict
-
-
 
 def main():
     sub_path1=sys.argv[1]
@@ -87,8 +53,8 @@ def main():
     fileList = [x for x in fileList if x.endswith('.sam')]
     b = Bar('Processing files', max=len(fileList))
     for file in fileList:
-        fastaDict=readFasta(sub_path1+'/'+file.split('-')[0]+'.merged.fasta')
-        fastqDict=readFastq(sub_path1+'/'+file.split('-')[0]+'.merged.subreads.fastq')
+        fastaDict=readFasta(sub_path1+'/'+file.split('-')[0]+'.fasta')
+        fastqDict=readFastq(sub_path1+'/'+file.split('-')[0]+'_subs.fastq')
         headers = readSAM(sub_path2+'/'+file)
         faName = sub_path2+'/'+file.split('.')[0] + '.fasta'
         fqName = sub_path2+'/'+file.split('.')[0] + '.subreads.fastq'
@@ -99,9 +65,10 @@ def main():
         faOut.close()
         fqOut = open(fqName, 'w+')
         for header in headers:
+            header=header.strip().split('_')[0]
             if header in fastqDict:
-                name,seq,qual=fastqDict[header]
-                fqOut.write('@' + name + '\n' + seq + '\n+\n'+qual+'\n')
+                for name,seq,qual in fastqDict[header]:
+                    fqOut.write('@' + name + '\n' + seq + '\n+\n'+qual+'\n')
 
         b.next()
 

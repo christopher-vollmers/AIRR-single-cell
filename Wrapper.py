@@ -2,12 +2,6 @@ import os
 import sys
 import argparse
 
-input_folder=sys.argv[1]
-output_folder=sys.argv[2]
-isotype_positions=sys.argv[3]
-config_file=sys.argv[4]
-igBlastPath=sys.argv[5]
-
 def argParser():
     '''Parses arguments.'''
     parser = argparse.ArgumentParser(description = 'Makes consensus sequences \
@@ -16,7 +10,9 @@ def argParser():
                                      prefix_chars = '-')
     required = parser.add_argument_group('required arguments')
     required.add_argument('--input_folder', '-i', type=str, action='store', required=True,
-                          help='This folder should contain the fasta and subread files for all the single cells to be analyzed')
+                          help='This folder should contain the consensus read fasta and subread fastq files for all the single cells to be analyzed')
+    required.add_argument('--sam_folder', '-s', type=str, action='store', required=True,
+                          help='This folder should contain the sam files for all the single cells to be analyzed')
     parser.add_argument('--output_folder', '-o', type=str, action='store',
                         help='Output folders and files will be generate here')
     parser.add_argument('--isotype_positions', '-t', type=str, action='store',
@@ -43,22 +39,22 @@ def makeFolders():
     os.system('mkdir %s/TCR/temp' %(output_folder))
 
 def processIGL():
-    os.system('python3 igl_filter.py %s %s/IGL' %(input_folder,output_folder))
+    os.system('python3 igl_filter.py %s %s/IGL' %(sam_folder,output_folder))
     os.system('python3 clean.py %s/IGL'  %(output_folder))
     os.system('python3 filter_fasta.py %s %s/IGL' %(input_folder,output_folder))
-    os.system('python3 IGLWrapper_simple.py %s/IGL %s/IGL/temp 500 %s IGKV_processed IGHD_processed IGKJ_processed IGLK %s ' %(output_folder,output_folder,config_file,igBlastPath))
-    os.system('python3 IGLWrapper_simple.py %s/IGL %s/IGL/temp 500 %s  IGLV_processed IGHD_processed IGLJ_processed IGLL %s ' %(output_folder,output_folder,config_file,igBlastPath))
+    os.system('python3 IGLWrapper_simple.py %s/IGL %s/IGL/temp 500 %s IGKV_processed IGHD_processed IGKJ_processed IGLK %s %s ' %(output_folder,output_folder,config_file,igBlastPath,output_folder))
+    os.system('python3 IGLWrapper_simple.py %s/IGL %s/IGL/temp 500 %s  IGLV_processed IGHD_processed IGLJ_processed IGLL %s %s' %(output_folder,output_folder,config_file,igBlastPath,output_folder))
 
 
 def processTCR():
-    os.system('python3 tcr_filter.py %s %s/TCR' %(input_folder,output_folder))
+    os.system('python3 tcr_filter.py %s %s/TCR' %(sam_folder,output_folder))
     os.system('python3 clean.py %s/TCR'  %(output_folder))
     os.system('python3 filter_fasta.py %s %s/TCR' %(input_folder,output_folder))
     os.system('python3 TCRWrapper_simple.py %s/TCR %s/TCR/temp 500 %s TRAV_processed TRBD_processed TRAJ_processed TCRA %s ' %(output_folder,output_folder,config_file,igBlastPath))
-    os.system('python3 TCRWrapper_simple.py %s/TCR %s/TCR/temp 500 %s TRBV_processed TRBD_processed TRBJ_processed TCRB %s ' %(output_folder,output_folder,config_file,igBlastPath))
+    os.system('python3 TCRWrapper_updated.py %s/TCR %s/TCR/temp 500 %s TRBV_processed TRBD_processed TRBJ_processed TCRB %s ' %(output_folder,output_folder,config_file,igBlastPath))
 
 def processIGH():
-    os.system('python3 antibody_filter.py %s %s/IGH' %(input_folder,output_folder))
+    os.system('python3 antibody_filter.py %s %s/IGH' %(sam_folder,output_folder))
     os.system('python3 clean.py %s/IGH'  %(output_folder))
     os.system('python3 cell_sam2psl.py %s/IGH' %(output_folder))
     os.system('python3 identifyIsotypes.py %s %s/IGH' %(isotype_positions,output_folder))
@@ -70,6 +66,7 @@ args = argParser()
 
 
 input_folder=args['input_folder']
+sam_folder=args['sam_folder']
 output_folder=args['output_folder']
 isotype_positions=args['isotype_positions']
 config_file=args['config']

@@ -14,6 +14,11 @@ python3 antibodyIsotypeWrapper.py inDir
 import os
 import sys
 import numpy as np
+import mappy as mm
+import pyabpoa as poa
+poa_aligner = poa.msa_aligner(match=5)
+
+
 
 def configReader(configIn):
     '''Parses the config file.'''
@@ -25,7 +30,7 @@ def configReader(configIn):
         progs[line[0]] = line[1]
     # should have minimap, poa, racon, water, consensus
     # check for extra programs that shouldn't be there
-    possible = set(['poa', 'minimap2', 'gonk', 'consensus', 'racon', 'blat','emtrey','psl2pslx'])
+    possible = set(['poa', 'minimap2', 'gonk', 'consensus', 'racon', 'blat','emtrey','psl2pslx','medaka'])
     inConfig = set()
     for key in progs.keys():
         inConfig.add(key)
@@ -57,119 +62,158 @@ def read_fastq_file(seq_file):
         average_quals : float, average quality of that line
         seq_length : int, length of the sequence
     '''
-
-    lineNum=0
-    lastPlus = False
-    read_list=[]
+    read_list1 = []
+    read_list2 = []
+    length = 0
     for line in open(seq_file):
-        line = line.rstrip()
-        if not line:
-            continue
-        # make an entry as a list and append the header to that list
-        if lineNum % 4 == 0 and line[0] == '@':
-            if lastPlus==True:
-                read_list.append((name, seed, seq, qual, average_quals, seq_length))
-            name_root =line[1:]
-            name, seed = name_root, lineNum/4# int(name_root[1])
-        if lineNum % 4 == 1:
-            seq=line
-            seq_length = len(seq)
-        if lineNum % 4 == 2:
-            lastPlus = True
-        if lineNum % 4 == 3 and lastPlus:
-            qual=line
-            quals = []
-            for character in qual:
-                number = ord(character) - 33
-                quals.append(number)
-            average_quals = np.average(quals)
-        lineNum += 1
-    return read_list
+        length += 1
+    lineNum = 0
+    seq_file_open = open(seq_file, 'r')
+    previous = ''
+    burn = False
+    while lineNum < length:
+        name_root = seq_file_open.readline().strip()[1:].split('_')
+        name = name_root[0]
+        number = name_root[1]
+        seq = seq_file_open.readline().strip()
+        _ = seq_file_open.readline().strip()
+        qual = seq_file_open.readline().strip()
+
+        if previous != name:
+            burn = False
+            previous = name
+
+        if number == '0':
+            burn = True
+
+        seq_length = len(seq)
+
+        if burn or 'I' in number:
+            read_list2.append((name, seq, qual, seq_length))
+        else:
+            read_list1.append((name, seq, qual, seq_length))
+
+        lineNum += 4
+    return read_list1, read_list2
 
 
+def determine_consensus(name, fasta, fastq_reads_full,fastq_reads_partial, counter):
+    '''Aligns and returns the consensus'''
+    corrected_consensus = ''
+    repeats = '0'
 
-def determine_consensus(name, fasta_reads,fastq_reads):
-        '''Aligns and returns the consensus'''
-#        print('determine')
-        corrected_consensus = ''
+    fasta_read_dict=fasta
+    fasta_reads = []
+    for read, seq in fasta_read_dict.items():
+        fasta_reads.append((read, seq))
+    repeats = str(len(fasta_reads))
 
-#        fastq_reads=read_fastq_file(fastq)
-        out_Fq=temp_folder + '/subsampled.fastq'
-        out=open(out_Fq,'w')
+    out_Fq = temp_folder + '/' + counter + '_subsampled.fastq'
+    out_F = temp_folder + '/' + counter + '_subsampled.fasta'
+    combined_consensus_file = open(temp_folder + '/' + counter + '.fasta', 'w')
+    out = open(out_Fq, 'w')
 
-        indexes=np.random.choice(np.arange(0,len(fastq_reads),1),min(len(fastq_reads),subsample),replace=False)
-        subsample_fastq_reads=[]
-        for index in indexes:
-            subsample_fastq_reads.append(fastq_reads[index])
+    poa_cons = temp_folder + '/consensus.'+counter+'.fasta'
+    output_cons = temp_folder + '/corrected_consensus.'+counter+'.fasta'
+    overlap = temp_folder +'/overlaps.'+counter+'.paf'
+    overlap_fh=open(overlap,'w')
+
+
+    fastq_reads = fastq_reads_full + fastq_reads_partial
+    if len(fastq_reads) > 0:
+        if len(fastq_reads_full) < subsample:
+            subsample_fastq_reads = fastq_reads
+        else:
+            indeces = np.random.choice(
+                np.arange(0, len(fastq_reads_full)),
+                min(len(fastq_reads_full), subsample), replace=False)
+            subsample_fastq_reads = []
+            for index in indeces:
+                subsample_fastq_reads.append(fastq_reads_full[index])
+
+        subread_counter = 0
+
+        subsample_fastq_reads_numbered=[]
         for read in subsample_fastq_reads:
-            out.write('@'+read[0]+'_'+str(read[1])+'\n'+read[2]+'\n+\n'+read[3]+'\n')
-
-
-
-
+            subread_counter += 1
+            out.write('@' + read[0] + '_' + str(subread_counter) + '\n'
+                      + read[1] + '\n+\n' + read[2] + '\n')
+            subsample_fastq_reads_numbered.append((read[0] + '_' + str(subread_counter), read[1], read[2], read[3]))
         out.close()
+        subsample_fastq_reads=list(subsample_fastq_reads_numbered)
 
 
-        poa_cons = temp_folder + '/consensus.fasta'
-        final = temp_folder + '/corrected_consensus.fasta'
-        overlap = temp_folder +'/overlaps.sam'
-        pairwise = temp_folder + '/prelim_consensus.fasta'
+        indeces = np.random.choice(np.arange(0, len(fasta_reads)),
+                                   min(len(fasta_reads), 20), replace=False)
+        subsample_fasta_reads = []
+        for index in indeces:
+            subsample_fasta_reads.append(fasta_reads[index])
+
+        first = subsample_fasta_reads[0][1]
+        sequences=[]
+        mm_align = mm.Aligner(seq=first, preset='map-ont')
+        for read,sequence in subsample_fasta_reads:
+            for hit in mm_align.map(sequence):
+                 if hit.is_primary:
+                     if hit.strand==1:
+                         sequences.append(sequence)
+                     elif hit.strand==-1:
+                         sequences.append(mm.revcomp(sequence))
 
 
-        reads=fasta_reads
-        repeats=0
-        qual=[]
-        raw=[]
-        before=[]
+        res = poa_aligner.msa(sequences, out_cons=True, out_msa=False)
+        if len(sequences)<=2:
+            consensus_sequence = sequences[0]
+        elif not res.cons_seq:
+            consensus_sequence = sequences[0]
+        else:
+            consensus_sequence = res.cons_seq[0]
 
-        after=[]
-        combined_name=name
-        for read in reads:
-            best=read
-
-        print(best)
         out_cons_file = open(poa_cons, 'w')
-        out_cons_file.write('>' + best + '\n' + reads[best].replace('-', '') + '\n')
+        out_cons_file.write('>Consensus\n' + consensus_sequence + '\n')
         out_cons_file.close()
 
 
         final=poa_cons
-        for i in np.arange(1,2,1):
-            if i==1:
-                input_cons=poa_cons
-                output_cons=poa_cons.replace('.fasta','_'+str(i)+'.fasta')
-            else:
-                input_cons=poa_cons.replace('.fasta','_'+str(i-1)+'.fasta')
-                output_cons=poa_cons.replace('.fasta','_'+str(i)+'.fasta')
+        mm_align = mm.Aligner(seq=consensus_sequence, preset='map-ont')
+        for name,sequence,q,le in subsample_fastq_reads:
+            for hit in mm_align.map(sequence):
+                if hit.is_primary:
+                    overlap_fh.write("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(
+                        name, str(len(sequence)), hit.q_st, hit.q_en,
+                        hit.strand, 'Consensus', hit.ctg_len, hit.r_st,
+                        hit.r_en, hit.mlen, hit.blen, hit.mapq))
 
-#                print(i,minimap2,input_cons,out_Fq,overlap)
-            minimap2_command='%s -t 1 --secondary=no -ax map-ont \
-                              %s %s >%s 2>./minimap2_messages' \
-                              %(minimap2, input_cons, out_Fq,overlap)
-#            minimap2_process=subprocess.run(minimap2_command,shell=True)
-            os.system(minimap2_command)
-            racon_command='%s -q 5 -t 1 %s %s %s >%s 2>./racon_messages.txt' \
-                      %(racon, out_Fq, overlap, input_cons, output_cons)
-#            racon_process=subprocess.run(racon_command, shell=True)
-            os.system(racon_command)
-            final = output_cons
+        overlap_fh.close()
 
+        os.system('%s -q 5 -t 1 --no-trimming %s %s %s >%s 2>./racon_messages.txt' \
+                   %(racon,out_Fq, overlap, poa_cons, output_cons))
+        final=output_cons
 
-
-#        print(final)
         reads = read_fasta(final)
         if len(reads)==0:
+            print('racon no')
             reads = read_fasta(poa_cons)
 
+        forMedaka = open(output_cons,'w')
         for read in reads:
             corrected_consensus = reads[read]
+            forMedaka.write('>Corrected_Consensus\n'+corrected_consensus+'\n')
+        forMedaka.close()
 
+        os.system('mkdir ' + temp_folder + '/' + counter)
+        os.system('%s -f -i %s -d %s -o %s > %s_medaka_messages.txt 2>&1'
+                  % (medaka, out_Fq, final,
+                     temp_folder + '/' + counter, temp_folder + '/' + counter))
+        final = temp_folder + '/' + counter + '/consensus.fasta'
+        reads = read_fasta(final)
+        for read in reads:
+            corrected_consensus = reads[read]  # if no read in file, corrected_consensus from racon output is used implicitly
         return corrected_consensus
 
-
-def make_consensus(name,fastq_reads,fasta_reads):
+def make_consensus(name,fastq_reads_full,fastq_reads_partial,fasta_reads):
     if len(fasta_reads)>0:
-        corrected_consensus=determine_consensus(name,fasta_reads,fastq_reads)
+        corrected_consensus=determine_consensus(name,fasta_reads,fastq_reads_full,fastq_reads_partial,'1')
         return '>%s\n%s\n' %(name,corrected_consensus)
     else:
         return 'nope'
@@ -220,24 +264,29 @@ def extract_reads(fasta,fastq):
     for line in open(fasta+'.table.parsed'):
 #        print(line[:70])
         a=line.strip().split('\t')
-        name=a[0]
+        name=a[0].split('_')[0]
         name_list.append(name)
 
-    fastq_reads=read_fastq_file(fastq)
+    fastq_reads_full, fastq_reads_partial=read_fastq_file(fastq)
     fasta_reads=read_fasta(fasta)
 
-    new_fastq_reads=[]
+    new_fastq_reads_full=[]
+    new_fastq_reads_partial=[]
     new_fasta_reads={}
 
-    for read in fastq_reads:
-#        print(read[0],name_list)
-        if read[0] in name_list:
-            new_fastq_reads.append(read)
+    for read in fastq_reads_full:
+        if read[0].split('_')[0] in name_list:
+            new_fastq_reads_full.append(read)
+
+    for read in fastq_reads_partial:
+        if read[0].split('_')[0] in name_list:
+            new_fastq_reads_partial.append(read)
+
 
     for read in fasta_reads:
-        if read in name_list:
+        if read.split('_')[0] in name_list:
             new_fasta_reads[read]=fasta_reads[read]
-    return new_fastq_reads,new_fasta_reads,len(name_list)
+    return new_fastq_reads_full,new_fastq_reads_partial,new_fasta_reads,len(name_list)
 
 temp_folder = sys.argv[2]
 subsample = int(sys.argv[3])
@@ -248,7 +297,8 @@ poa = progs['poa']
 minimap2 = progs['minimap2']
 racon = progs['racon']
 consensus = progs['consensus']
-
+medaka=progs['medaka']
+print(medaka)
 
 def main():
     '''
@@ -289,8 +339,8 @@ def main():
     for _, inputs in cellDict.items():
         fasta,fastq, root=inputs[0],inputs[1], inputs[2]
         check_for_complete_air(inDir+'/'+fasta,igBlastPath)
-        temp_fastq_reads,temp_fasta_reads,abundance=extract_reads(inDir+'/'+fasta,inDir+'/'+fastq)
-        new_read=make_consensus(root+'_'+str(abundance),temp_fastq_reads,temp_fasta_reads)
+        temp_fastq_reads_full, temp_fastq_reads_partial ,temp_fasta_reads,abundance=extract_reads(inDir+'/'+fasta,inDir+'/'+fastq)
+        new_read=make_consensus(root+'_'+str(abundance),temp_fastq_reads_full,temp_fastq_reads_partial, temp_fasta_reads)
         print(new_read)
         if new_read!='nope':
 

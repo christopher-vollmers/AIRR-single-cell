@@ -23,7 +23,7 @@ def main():
     samList=[]
     for x in os.listdir(inDir):
         if x.endswith('.sam'):
-            if 'cell' in x and 'merged' not in x:
+            if 'cell' in x and 'sam' in x:
                 samList.append(x)
     for file in samList:
         sam = inDir+'/'+file
