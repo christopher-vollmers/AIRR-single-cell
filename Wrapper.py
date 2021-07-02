@@ -51,7 +51,7 @@ def processTCR():
     os.system('python3 clean.py %s/TCR'  %(output_folder))
     os.system('python3 filter_fasta.py %s %s/TCR' %(input_folder,output_folder))
     os.system('python3 TCRWrapper_simple.py %s/TCR %s/TCR/temp 500 %s TRAV_processed TRBD_processed TRAJ_processed TCRA %s ' %(output_folder,output_folder,config_file,igBlastPath))
-    os.system('python3 TCRWrapper_updated.py %s/TCR %s/TCR/temp 500 %s TRBV_processed TRBD_processed TRBJ_processed TCRB %s ' %(output_folder,output_folder,config_file,igBlastPath))
+    os.system('python3 TCRWrapper_simple.py %s/TCR %s/TCR/temp 500 %s TRBV_processed TRBD_processed TRBJ_processed TCRB %s ' %(output_folder,output_folder,config_file,igBlastPath))
 
 def processIGH():
     os.system('python3 antibody_filter.py %s %s/IGH' %(sam_folder,output_folder))
